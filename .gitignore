@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+AIconfig-search/react/node_modules
+AIconfig-search/__pycache__/
 /.pnp
 .pnp.*
 .yarn/*

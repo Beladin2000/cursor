@@ -1,0 +1,15 @@
+[
+  "show ip interface brief",
+  "show interfaces status",
+  "show interfaces trunk",
+  "show interface switchport",
+  "show vlan brief",
+  "show spanning-tree summary",
+  "show cdp neighbors",
+  "show ip route",
+  "show ip protocols",
+  "show ip ospf neighbor",
+  "show ip bgp summary",
+  "show ip arp",
+  "show access-lists"
+]
