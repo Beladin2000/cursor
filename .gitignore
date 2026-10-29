@@ -5,6 +5,8 @@
 AIconfig-search/react/node_modules
 AIconfig-search/**/__pycache__/
 AIconfig-search/public/data/
+AIconfig-search/public/configs/
+AIconfig-search/public/api_server.py
 .venv/
 /.pnp
 .pnp.*

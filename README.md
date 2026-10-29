@@ -31,6 +31,14 @@ python3 AIconfig-search/scripts/build_evidence_index.py --data-root AIconfig-sea
 
 `data/region10` is the linked sample. Production CI points `--config-root` at a `configs_swan` checkout and `--facts-root` at `show_swan_facts`. Node 20 builds the React app. Python 3.11 builds the indexes. Apache serves `public/` and proxies `/api` to the FastAPI process. See `docs/architecture.md` and `deploy/apache-swan.conf`.
 
+The downloadable script set is `AIconfig-search/scripts/`. `scripts/README.txt` lists every command. One shot:
+
+```bash
+sh AIconfig-search/scripts/build_all.sh
+```
+
+That writes the indexes under `AIconfig-search/public/data/`. `public/data/` is gitignored, so a fresh clone still builds them locally.
+
 No credentials are stored in the tree. Set these only when the live system is actually attached:
 
 - `NETBOX_URL`, `NETBOX_TOKEN`
