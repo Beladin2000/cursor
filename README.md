@@ -11,7 +11,25 @@ SWAN joins those into the correlation index under `AIconfig-search/public/data/`
 
 ## V20.3.5
 
-`AIconfig-search/api_server.py` is the entry point. It is a standard-library HTTP server. `ai_server.py` is the live NetBox and DNS lookup. The React shell is `AIconfig-search/react`. There is one stylesheet, `react/src/styles.css`. Allowlisted Network Automation commands live only in `react/src/liveCommands.json`.
+The React app is V20.3.5. Indexed configuration, ARP, and MAC are built first. Live NetBox, NNMi, and OpenText NA go through the V27 FastAPI entry in `AIconfig-search/api_server.py`, which calls `ai_server.py`. There is one stylesheet, `react/src/styles.css`. Allowlisted Network Automation commands live in `react/src/liveCommands.json`.
+
+```bash
+python3 AIconfig-search/build_index.py \
+  --config-root AIconfig-search/data/region10/configs \
+  --project-root AIconfig-search \
+  --chunk-size 10000
+python3 AIconfig-search/scripts/build_arp_index.py \
+  --facts-root AIconfig-search/data/region10/show_swan_facts \
+  --output AIconfig-search/public/data
+python3 AIconfig-search/scripts/build_mac_index.py \
+  --facts-root AIconfig-search/data/region10/show_swan_facts \
+  --output AIconfig-search/public/data
+python3 AIconfig-search/scripts/build_correlation_index.py --data-root AIconfig-search/public/data
+python3 AIconfig-search/scripts/build_operational_index.py --data-root AIconfig-search/public/data
+python3 AIconfig-search/scripts/build_evidence_index.py --data-root AIconfig-search/public/data
+```
+
+`data/region10` is the linked sample. Production CI points `--config-root` at a `configs_swan` checkout and `--facts-root` at `show_swan_facts`. Node 20 builds the React app. Python 3.11 builds the indexes. Apache serves `public/` and proxies `/api` to the FastAPI process. See `docs/architecture.md` and `deploy/apache-swan.conf`.
 
 No credentials are stored in the tree. Set these only when the live system is actually attached:
 
@@ -27,10 +45,11 @@ This workspace answers investigations from `AIconfig-search/builtin_slice.json`,
 ### Run V20.3.5
 
 ```bash
+pip install -r AIconfig-search/requirements.txt
 python3 AIconfig-search/api_server.py
 ```
 
-That listens on `0.0.0.0:4183`. In another shell:
+That starts the V27 FastAPI app on `0.0.0.0:4183`. In another shell:
 
 ```bash
 cd AIconfig-search/react

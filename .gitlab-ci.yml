@@ -1,0 +1,54 @@
+# SWAN: Node 20 builds the React frontend, Python 3.11 builds the indexes.
+# Deploy to Apache only when the runner has the SSH variables set.
+
+stages:
+  - build
+  - deploy
+
+variables:
+  PROJECT_ROOT: "AIconfig-search"
+  SWAN_V20_DEPLOY_PATH: "/var/www/html/AI-config-search"
+
+build_indexes:
+  stage: build
+  image: python:3.11
+  script:
+    - python -m py_compile "$PROJECT_ROOT/build_index.py" "$PROJECT_ROOT/api_server.py" "$PROJECT_ROOT"/scripts/*.py
+    - python "$PROJECT_ROOT/build_index.py" --config-root "$PROJECT_ROOT/data/region10/configs" --project-root "$PROJECT_ROOT" --chunk-size 10000
+    - python "$PROJECT_ROOT/scripts/build_arp_index.py" --facts-root "$PROJECT_ROOT/data/region10/show_swan_facts" --output "$PROJECT_ROOT/public/data"
+    - python "$PROJECT_ROOT/scripts/build_mac_index.py" --facts-root "$PROJECT_ROOT/data/region10/show_swan_facts" --output "$PROJECT_ROOT/public/data"
+    - python "$PROJECT_ROOT/scripts/build_correlation_index.py" --data-root "$PROJECT_ROOT/public/data"
+    - python "$PROJECT_ROOT/scripts/build_operational_index.py" --data-root "$PROJECT_ROOT/public/data"
+    - python "$PROJECT_ROOT/scripts/build_evidence_index.py" --data-root "$PROJECT_ROOT/public/data"
+    - test -s "$PROJECT_ROOT/public/data/manifest.json"
+    - test -s "$PROJECT_ROOT/public/data/correlation-index.json"
+    - test -s "$PROJECT_ROOT/public/data/operational-index.json"
+    - test -s "$PROJECT_ROOT/public/data/evidence-index.json"
+    - test -d "$PROJECT_ROOT/web"
+
+build_react:
+  stage: build
+  image: node:20
+  script:
+    - cd "$PROJECT_ROOT/react"
+    - npm ci
+    - npm run build
+    - test -f "$CI_PROJECT_DIR/$PROJECT_ROOT/public/index.html"
+    - grep -q "SWAN Operational Correlation Engine" "$CI_PROJECT_DIR/$PROJECT_ROOT/public/index.html"
+    - grep -q "Vendor" "$CI_PROJECT_DIR/$PROJECT_ROOT/public/index.html"
+    - grep -q "Platform" "$CI_PROJECT_DIR/$PROJECT_ROOT/public/index.html"
+    - grep -q "SWAN v20.3 React" "$CI_PROJECT_DIR/$PROJECT_ROOT/public/index.html"
+    - if grep -q "SWAN AI Config Search" "$CI_PROJECT_DIR/$PROJECT_ROOT/public/index.html"; then exit 1; fi
+    - if grep -q "Match Type" "$CI_PROJECT_DIR/$PROJECT_ROOT/public/index.html"; then exit 1; fi
+    - if grep -q "Search In" "$CI_PROJECT_DIR/$PROJECT_ROOT/public/index.html"; then exit 1; fi
+    - if grep -q "View Live Configuration from Network Automation" "$CI_PROJECT_DIR/$PROJECT_ROOT/public/index.html"; then exit 1; fi
+
+deploy_apache:
+  stage: deploy
+  image: python:3.11
+  rules:
+    - if: '$SSH_PRIVATE_KEY && $DEPLOY_USER && $DEPLOY_HOST'
+      when: manual
+  script:
+    - test "$SWAN_V20_DEPLOY_PATH" = "/var/www/html/AI-config-search"
+    - echo "Stream public/ to ${DEPLOY_USER}@${DEPLOY_HOST}:${SWAN_V20_DEPLOY_PATH} with the key in SSH_PRIVATE_KEY."

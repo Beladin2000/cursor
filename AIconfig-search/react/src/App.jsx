@@ -347,7 +347,10 @@ function Home({ home, onOpen }) {
       </section>
       <section className="stack">
         <h2>Indexed nightly</h2>
-        <p className="muted">These are what make a search fast. The pipeline clones them, builds the correlation index, and SWAN reads that index first.</p>
+        <p className="muted">
+          {home?.pipeline?.indexed ?? "These are what make a search fast. The pipeline clones them, builds the correlation index, and SWAN reads that index first."}
+        </p>
+        {home?.pipeline?.live ? <p className="muted">{home.pipeline.live}</p> : null}
         <div className="source-grid">
           {(home?.indexedSources ?? []).map((source) => (
             <article key={source.id} className="panel">

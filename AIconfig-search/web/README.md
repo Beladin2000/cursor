@@ -1,0 +1,1 @@
+Apache's document root is `public/` after the Node 20 build copies the React app there and the Python 3.11 builders write `public/data/`. This directory marks the web half of the repository layout the pipeline checks for.

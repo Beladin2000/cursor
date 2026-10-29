@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""SWAN V20.3.5 entry point.
+"""SWAN V20.3.5 entry point. This module is the V27 FastAPI application.
 
-Stdlib HTTP server. One process serves the investigation API. There is no
-FastAPI router and no second stylesheet. Live NetBox and DNS live in
-ai_server.py. Allowlisted Network Automation commands are read from
-react/src/liveCommands.json.
-
-The original V27 source was not in this workspace. This file restores that
-contract: the same entry point, the same nightly-index-first investigation,
-and live calls that stay unwired until their environment variables are set.
+Indexed investigations use the Region 10 slice until public/data is the
+corpus the UI reads. Live NetBox, DNS, CPNR, and NNMi go through
+ai_server.py. OpenText Network Automation show commands go through
+backend/integrations/network_automation.py. One process. Credentials stay
+in the environment.
 """
 
 from __future__ import annotations
@@ -16,16 +13,18 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import sys
-import threading
+from contextlib import asynccontextmanager
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
+from fastapi import Body, FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
 import ai_server
+from backend.integrations.network_automation import run_allowlisted_command
 
 ROOT = Path(__file__).resolve().parent
 SLICE_PATH = ROOT / "builtin_slice.json"
@@ -1997,197 +1996,6 @@ def summarize(dossier: dict) -> dict:
     return {"headline": headline, "paragraphs": paragraphs, "leading": leading, "healthy": healthy, "checks": checks, "packet": "\n".join(lines)}
 
 
-def live_gap(name: str) -> dict:
-    return {"configured": False, "sent": False, "warning": ai_server.configuration_warning(name), "records": []}
-
-
-def cpnr_lookup(query: str) -> dict:
-    if not os.environ.get("CPNR_URL", "").strip():
-        return {**live_gap("CPNR_URL"), "detail": "No CPNR record found"}
-    return {
-        "configured": True,
-        "sent": False,
-        "warning": "Backend configuration warning: CPNR_URL is set, but this entry point does not guess a zone API. Indexed CPNR records stay in the investigation.",
-        "records": [],
-        "detail": "No CPNR record found",
-        "query": query,
-    }
-
-
-def nnmi_lookup(query: str) -> dict:
-    if not os.environ.get("NNMI_URL", "").strip():
-        return live_gap("NNMI_URL")
-    return {
-        "configured": True,
-        "sent": False,
-        "warning": "Backend configuration warning: NNMI_URL is set, but this entry point does not guess an alarm API. Indexed alarms stay in the investigation.",
-        "records": [],
-        "query": query,
-    }
-
-
-def na_command(device: str, command: str, commands: list[str]) -> dict:
-    command = (command or "").strip()
-    device = (device or "").strip()
-    if command not in commands:
-        return {"ok": False, "sent": False, "error": "Command is not allowlisted. SWAN did not send it."}
-    if not HOST_RE.fullmatch(device):
-        return {"ok": False, "sent": False, "error": "Device name is not a hostname SWAN will pass to the runner."}
-    runner = os.environ.get("NA_COMMAND_RUNNER", "").strip()
-    if not runner:
-        return {
-            "ok": False,
-            "sent": False,
-            "warning": (
-                "Backend configuration warning: the Network Automation command path is not configured. "
-                f"SWAN did not send “{command}”. Set NA_COMMAND_RUNNER to an executable that accepts the device and this allowlisted command."
-            ),
-        }
-    timeout = int(os.environ.get("NA_TIMEOUT", "30") or "30")
-    try:
-        completed = subprocess.run(
-            [runner, device, command],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            shell=False,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "sent": True, "error": "The command runner timed out."}
-    except OSError:
-        return {
-            "ok": False,
-            "sent": False,
-            "warning": f"Backend configuration warning: NA_COMMAND_RUNNER could not be started. SWAN did not send “{command}”.",
-        }
-    return {
-        "ok": completed.returncode == 0,
-        "sent": True,
-        "exitCode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
-    }
-
-
-ENGINE: Engine | None = None
-COMMANDS: list[str] = []
-
-
-class Handler(BaseHTTPRequestHandler):
-    server_version = "SWAN/20.3.5"
-
-    def log_message(self, fmt: str, *args) -> None:
-        sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
-
-    def _send(self, status: int, payload: dict | list | None = None, body: bytes | None = None, content_type: str = "application/json") -> None:
-        data = body if body is not None else json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(data)
-
-    def do_OPTIONS(self) -> None:
-        self._send(204, body=b"", content_type="text/plain")
-
-    def do_GET(self) -> None:
-        parsed = urlparse(self.path)
-        path = parsed.path
-        query = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
-        assert ENGINE is not None
-        if path == "/api/health":
-            self._send(200, {"ok": True, "version": "20.3.5", "entry": "api_server.py", "index": "builtin-region-10"})
-            return
-        if path == "/api/home":
-            self._send(
-                200,
-                {
-                    "version": "20.3.5",
-                    "productionIndex": PRODUCTION_INDEX,
-                    "indexedSources": INDEXED_SOURCES,
-                    "liveSources": LIVE_SOURCES,
-                    "stats": ENGINE.slice_stats(),
-                    "findings": ENGINE.notable_anomalies(),
-                },
-            )
-            return
-        if path == "/api/suggest":
-            text = query.get("q", "")
-            self._send(200, {"kind": ENGINE.describe_query(text), "suggestions": ENGINE.suggest(text)})
-            return
-        if path == "/api/investigate":
-            self._send(200, ENGINE.investigate(query.get("q", ""), query.get("as") == "config"))
-            return
-        if path == "/api/vlan-matrix":
-            self._send(200, {"rows": ENGINE.vlan_matrix()})
-            return
-        if path == "/api/netbox":
-            self._send(200, ai_server.netbox_lookup(query.get("ip", "")))
-            return
-        if path == "/api/dns":
-            self._send(200, ai_server.dns_lookup(query.get("q", "")))
-            return
-        if path == "/api/cpnr":
-            self._send(200, cpnr_lookup(query.get("q", "")))
-            return
-        if path == "/api/nnmi/alarms":
-            self._send(200, nnmi_lookup(query.get("q", "")))
-            return
-        if path.startswith("/api/"):
-            self._send(404, {"error": "Unknown API"})
-            return
-        self._send_static(path)
-
-    def do_POST(self) -> None:
-        parsed = urlparse(self.path)
-        if parsed.path != "/api/na/command":
-            self._send(404, {"error": "Unknown API"})
-            return
-        length = int(self.headers.get("Content-Length", "0") or "0")
-        if length > 65536:
-            self._send(413, {"error": "Request is too large."})
-            return
-        try:
-            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-        except json.JSONDecodeError:
-            self._send(400, {"error": "Expected JSON."})
-            return
-        self._send(200, na_command(str(payload.get("device") or ""), str(payload.get("command") or ""), COMMANDS))
-
-    def _send_static(self, path: str) -> None:
-        relative = path.lstrip("/") or "index.html"
-        if relative.startswith(".."):
-            self._send(404, {"error": "Not found"})
-            return
-        candidate = (PUBLIC_DIR / relative).resolve()
-        if PUBLIC_DIR not in candidate.parents and candidate != PUBLIC_DIR:
-            self._send(404, {"error": "Not found"})
-            return
-        if candidate.is_dir():
-            candidate = candidate / "index.html"
-        if not candidate.is_file():
-            fallback = PUBLIC_DIR / "index.html"
-            if fallback.is_file() and "." not in Path(relative).name:
-                candidate = fallback
-            else:
-                self._send(404, {"error": "Not found"})
-                return
-        content_type = "text/html; charset=utf-8"
-        if candidate.suffix == ".js":
-            content_type = "text/javascript; charset=utf-8"
-        elif candidate.suffix == ".css":
-            content_type = "text/css; charset=utf-8"
-        elif candidate.suffix == ".svg":
-            content_type = "image/svg+xml"
-        elif candidate.suffix == ".json":
-            content_type = "application/json"
-        self._send(200, body=candidate.read_bytes(), content_type=content_type)
-
 
 def self_test() -> None:
     assert ENGINE is not None
@@ -2195,14 +2003,14 @@ def self_test() -> None:
     assert len(commands) == 13
     assert "show ip arp" in commands
     assert "show running-config" not in commands
-    blocked = na_command("C9300-REGN10-4C-MGT-1", "show running-config", commands)
+    blocked = run_allowlisted_command("C9300-REGN10-4C-MGT-1", "show running-config", commands)
     assert blocked["sent"] is False
-    warning = na_command("C9300-REGN10-4C-MGT-1", "show ip arp", commands)
+    warning = run_allowlisted_command("C9300-REGN10-4C-MGT-1", "show ip arp", commands)
     assert warning["sent"] is False and "Backend configuration warning" in warning["warning"]
     assert "did not send" in warning["warning"]
     dns = ai_server.dns_lookup("10.255.255.1")
     assert dns["detail"] == "No DNS record found"
-    cpnr = cpnr_lookup("10.99.1.5")
+    cpnr = ai_server.cpnr_lookup("10.99.1.5")
     assert "CPNR_URL" in cpnr["warning"]
     assert cpnr["detail"] == "No CPNR record found"
     netbox = ai_server.netbox_lookup("10.40.24.46")
@@ -2262,18 +2070,127 @@ def self_test() -> None:
     print("self-test ok")
 
 
-def main() -> None:
+ENGINE: Engine | None = None
+COMMANDS: list[str] = []
+
+
+def load_engine() -> Engine:
     global ENGINE, COMMANDS
-    ENGINE = Engine(json.loads(SLICE_PATH.read_text(encoding="utf-8")))
-    COMMANDS = load_commands()
+    if ENGINE is None:
+        ENGINE = Engine(json.loads(SLICE_PATH.read_text(encoding="utf-8")))
+        COMMANDS = load_commands()
+    return ENGINE
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    load_engine()
+    yield
+
+
+app = FastAPI(title="SWAN V27", version="20.3.5", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def _engine() -> Engine:
+    return load_engine()
+
+
+@app.get("/api/health")
+def health() -> dict:
+    data_root = PUBLIC_DIR / "data" / "manifest.json"
+    return {
+        "ok": True,
+        "version": "20.3.5",
+        "entry": "V27 FastAPI",
+        "module": "api_server.py",
+        "index": "public-data" if data_root.is_file() else "builtin-region-10",
+        "live": ["netbox", "dns", "cpnr", "nnmi", "opentext-na"],
+    }
+
+
+@app.get("/api/home")
+def home() -> dict:
+    engine = _engine()
+    return {
+        "version": "20.3.5",
+        "productionIndex": PRODUCTION_INDEX,
+        "indexedSources": INDEXED_SOURCES,
+        "liveSources": LIVE_SOURCES,
+        "stats": engine.slice_stats(),
+        "findings": engine.notable_anomalies(),
+        "pipeline": {
+            "frontend": "SWAN React V20.3.5",
+            "indexed": "configs_swan, ARP, and MAC are built into the correlation and operational indexes before a search.",
+            "live": "V27 FastAPI calls ai_server.py for NetBox, NNMi, and OpenText NA.",
+        },
+    }
+
+
+@app.get("/api/suggest")
+def suggest(q: str = "") -> dict:
+    engine = _engine()
+    return {"kind": engine.describe_query(q), "suggestions": engine.suggest(q)}
+
+
+@app.get("/api/investigate")
+def investigate(q: str = "", force: str = Query(default="", alias="as")) -> dict:
+    return _engine().investigate(q, force == "config")
+
+
+@app.get("/api/vlan-matrix")
+def vlan_matrix() -> dict:
+    return {"rows": _engine().vlan_matrix()}
+
+
+@app.get("/api/netbox")
+def netbox(ip: str = "") -> dict:
+    return ai_server.netbox_lookup(ip)
+
+
+@app.get("/api/dns")
+def dns(q: str = "") -> dict:
+    return ai_server.dns_lookup(q)
+
+
+@app.get("/api/cpnr")
+def cpnr(q: str = "") -> dict:
+    return ai_server.cpnr_lookup(q)
+
+
+@app.get("/api/nnmi/alarms")
+def nnmi(q: str = "") -> dict:
+    return ai_server.nnmi_alarms(q)
+
+
+@app.post("/api/na/command")
+def na_command(payload: dict = Body(...)) -> dict:
+    load_engine()
+    return run_allowlisted_command(str(payload.get("device") or ""), str(payload.get("command") or ""), COMMANDS)
+
+
+def main() -> None:
     if "--self-test" in sys.argv:
+        load_engine()
         self_test()
         return
+    import uvicorn
+
     port = int(os.environ.get("SWAN_API_PORT", "4183"))
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(f"SWAN api_server.py listening on 0.0.0.0:{port}", flush=True)
-    server.serve_forever()
+    print(f"SWAN V27 FastAPI listening on 0.0.0.0:{port}", flush=True)
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+
+
+if PUBLIC_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(PUBLIC_DIR), html=True), name="public")
 
 
 if __name__ == "__main__":
     main()
+
+

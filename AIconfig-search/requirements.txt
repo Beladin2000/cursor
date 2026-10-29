@@ -1,0 +1,4 @@
+# Index builders in build_index.py and scripts/ use only the Python 3.11 standard library.
+# The V27 entry point is a FastAPI application.
+fastapi>=0.115
+uvicorn>=0.32

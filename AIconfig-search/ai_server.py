@@ -227,3 +227,49 @@ def dns_lookup(query: str) -> dict:
         "answers": answers,
         "detail": answers[0],
     }
+
+
+def cpnr_lookup(query: str) -> dict:
+    """CPNR holds the zone. It is a different call from the system resolver."""
+    if not _env("CPNR_URL"):
+        return {
+            "configured": False,
+            "sent": False,
+            "warning": configuration_warning("CPNR_URL"),
+            "records": [],
+            "detail": "No CPNR record found",
+            "query": query,
+        }
+    return {
+        "configured": True,
+        "sent": False,
+        "warning": (
+            "Backend configuration warning: CPNR_URL is set, but this entry point does not guess a zone API. "
+            "Indexed CPNR records stay in the investigation."
+        ),
+        "records": [],
+        "detail": "No CPNR record found",
+        "query": query,
+    }
+
+
+def nnmi_alarms(query: str) -> dict:
+    """Related NNMi alarms. Unset NNMI_URL never leaves the process."""
+    if not _env("NNMI_URL"):
+        return {
+            "configured": False,
+            "sent": False,
+            "warning": configuration_warning("NNMI_URL"),
+            "records": [],
+            "query": query,
+        }
+    return {
+        "configured": True,
+        "sent": False,
+        "warning": (
+            "Backend configuration warning: NNMI_URL is set, but this entry point does not guess an alarm API. "
+            "Indexed alarms stay in the investigation."
+        ),
+        "records": [],
+        "query": query,
+    }
