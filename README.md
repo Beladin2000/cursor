@@ -9,7 +9,7 @@ The nightly index is built from two GitLab repositories:
 
 SWAN joins those into the correlation index under `AIconfig-search/public/data/` (`manifest.json`, the ARP, MAC, correlation, operational, and evidence indexes, and `chunk-0000` through `chunk-0130`). The latest build holds 10,534 IP correlations, 16,887 MAC correlations, 962 device correlations, 1,129 operational devices, 5,644 routes, 47,209 policies, 14,339 evidence IPs, 1,269 evidence devices, and 1,319 evidence VLANs.
 
-Live connectors are separate from that index: NetBox (IP, prefix, VRF, IPAM), a DNS lookup (forward and reverse), CPNR zone records, NNMi related alarms, and OpenText Network Automation configuration changes.
+Live connectors follow the V20.5.2 mapping and stay separate from that index. NetBox returns the address, most-specific prefix, VRF, status, role, DNS name, assigned device and interface, site, VLAN, tenant, and prefix hierarchy. DNS and CPNR are separate calls: an empty answer is “No DNS record found” or “No CPNR record found”. NNMi stays on `nnmi/alarms`. Network Automation keeps the change diff and an allowlisted set of show commands; a missing command path is a backend configuration warning, and the runner rejects anything outside the list. The Copilot handoff is the evidence packet, not a conclusion.
 
 Version **V20.3.2** in this workspace loads a fully linked Region 10 slice, plus the Region 07 aggregate that covers it. The production counts are shown on the home page. The live connectors in this workspace are filled from the slice so an investigation can be walked without those systems attached.
 

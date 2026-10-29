@@ -123,7 +123,7 @@ export function SwanApp() {
                 </button>
                 <span className="font-mono text-xs text-muted-foreground">V20.3.2</span>
               </div>
-              <p className="text-xs text-muted-foreground">Operational correlation for the SWAN network</p>
+              <p className="text-xs text-muted-foreground">SWAN Operational Correlation Engine</p>
             </div>
           </div>
           <nav className="flex gap-2" aria-label="Views">
@@ -209,7 +209,7 @@ export function SwanApp() {
         {view === "matrix" ? <VlanMatrix onOpen={openQuery} /> : null}
 
         {view === "investigate" && result?.kind === "dossier" ? (
-          <DossierView dossier={result.dossier} onOpen={openQuery} />
+          <DossierView key={result.dossier.query} dossier={result.dossier} onOpen={openQuery} />
         ) : null}
 
         {view === "investigate" && result?.kind === "choose-device" ? (
@@ -384,6 +384,11 @@ function Home({
           <Stat label="Evidence devices" value={PRODUCTION_INDEX.evidenceDevices} />
           <Stat label="Evidence VLANs" value={PRODUCTION_INDEX.evidenceVlans} />
         </dl>
+        <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+          <li><span className="font-mono text-xs text-foreground">build_index.py</span> reads configs_swan into manifest.json and the search chunks.</li>
+          <li><span className="font-mono text-xs text-foreground">build_arp_index.py</span> and <span className="font-mono text-xs text-foreground">build_mac_index.py</span> read show_swan_facts, then the indexes are normalized to arrays.</li>
+          <li><span className="font-mono text-xs text-foreground">build_correlation_index.py</span>, <span className="font-mono text-xs text-foreground">build_operational_index.py</span>, and <span className="font-mono text-xs text-foreground">build_evidence_index.py</span> write the indexes under public/data.</li>
+        </ol>
         <p className="text-xs text-muted-foreground">
           {PRODUCTION_INDEX.label}. This workspace loads a Region 10 slice of that index: {formatCount(stats.devices)} devices, {formatCount(stats.configRecords)} configuration lines, {formatCount(stats.arp)} ARP entries, {formatCount(stats.mac)} MAC entries.
         </p>

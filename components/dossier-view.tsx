@@ -16,6 +16,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Highlight, Pivot } from "@/components/highlight";
+import { Input } from "@/components/ui/input";
+import { NA_COMMANDS } from "@/lib/na-commands";
 import { cn } from "@/lib/utils";
 
 const toneClass: Record<string, string> = {
@@ -77,6 +79,7 @@ export function DossierView({
   const [copied, setCopied] = useState(false);
   const [ifaceFilter, setIfaceFilter] = useState(dossier.queryType === "vlan" ? "notable" : "all");
   const [configDevice, setConfigDevice] = useState(dossier.configDevices[0]?.device.id ?? "");
+  const [arpFilter, setArpFilter] = useState("");
 
   const interfaces = dossier.interfaces.filter((row) => {
     if (ifaceFilter === "all") return true;
@@ -94,6 +97,14 @@ export function DossierView({
   const activeConfig = dossier.configDevices.find((entry) => entry.device.id === configDevice) ?? dossier.configDevices[0];
   const elsewhere = dossier.configHits.filter((hit) => hit.elsewhere);
   const onSubject = dossier.configHits.filter((hit) => !hit.elsewhere);
+  const arpNeedle = arpFilter.trim().toLowerCase();
+  const filteredArp = dossier.arp.filter((row) => {
+    if (!arpNeedle) return true;
+    return [row.hostname, row.entry.ip, row.entry.mac, row.entry.interface, row.entry.protocol]
+      .join(" ")
+      .toLowerCase()
+      .includes(arpNeedle);
+  });
 
   async function copyPacket() {
     try {
@@ -127,7 +138,7 @@ export function DossierView({
             {showSummary ? "Hide findings" : "Summarize Findings"}
           </Button>
           <Button type="button" variant="outline" onClick={() => void copyPacket()}>
-            {copied ? "Copied" : "Copy findings packet"}
+            {copied ? "Copied" : "Copy evidence for Copilot"}
           </Button>
         </div>
       </div>
@@ -165,7 +176,7 @@ export function DossierView({
           <p className="text-xs font-medium tracking-[0.14em] text-signal uppercase">Copilot</p>
           <h3 className="mt-1 text-lg font-semibold tracking-tight">{summary.headline}</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            SWAN gathered the evidence first. This reads the structured findings, the same packet a Copilot handoff would receive.
+            The copied packet is the evidence, not a conclusion. This reading is only a way to scan that same packet.
           </p>
           <div className="mt-4 space-y-3 text-sm leading-6">
             {summary.paragraphs.map((paragraph) => (
@@ -234,7 +245,7 @@ export function DossierView({
                       <Pivot query={row.device.hostname} onOpen={onOpen}>
                         {row.device.hostname}
                       </Pivot>
-                      <div className="text-xs text-muted-foreground">{row.device.platform}</div>
+                      <div className="text-xs text-muted-foreground">Vendor {row.device.vendor} · Platform {row.device.platform}</div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{row.device.siteName}</TableCell>
                     <TableCell>{row.reasons.join(", ")}</TableCell>
@@ -353,6 +364,16 @@ export function DossierView({
           </Section>
 
           <Section title="ARP" source="show_swan_facts · show_ip_arp_all" count={dossier.arp.length} empty="No ARP entry references this investigation.">
+            <Input
+              value={arpFilter}
+              onChange={(event) => setArpFilter(event.target.value)}
+              placeholder="Filter device, IP, MAC, or interface"
+              className="mb-3 h-8 font-mono text-xs md:text-xs"
+              aria-label="Filter ARP entries"
+            />
+            {filteredArp.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nothing in this filter.</p>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -365,7 +386,7 @@ export function DossierView({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {dossier.arp.map((row) => (
+                {filteredArp.map((row) => (
                   <TableRow key={`${row.hostname}-${row.entry.ip}-${row.entry.mac}`}>
                     <TableCell><Pivot query={row.hostname} onOpen={onOpen}>{row.hostname}</Pivot></TableCell>
                     <TableCell><Pivot query={row.entry.ip} onOpen={onOpen}>{row.entry.ip}</Pivot></TableCell>
@@ -380,6 +401,7 @@ export function DossierView({
                 ))}
               </TableBody>
             </Table>
+            )}
           </Section>
 
           <Section title="MAC address table" source="show_swan_facts · show_mac_address_table_all" count={dossier.macs.length} empty="No MAC entry references this investigation.">
@@ -533,7 +555,7 @@ export function DossierView({
             ))}
           </LiveCard>
 
-          <LiveCard title="DNS lookup" system="Forward and reverse" empty="No resolver answer in the slice.">
+          <LiveCard title="DNS lookup" system="Forward and reverse" empty="No DNS record found">
             {dossier.lookups.map((lookup) => (
               <div key={`${lookup.direction}-${lookup.query}`} className="border-t border-border py-2 text-sm first:border-t-0 first:pt-0">
                 <div className="flex items-center justify-between gap-2">
@@ -546,7 +568,7 @@ export function DossierView({
             ))}
           </LiveCard>
 
-          <LiveCard title="CPNR" system="DNS records" empty="No CPNR record in the snapshot.">
+          <LiveCard title="CPNR" system="DNS records" empty="No CPNR record found">
             {dossier.dns.map((entry) => (
               <div key={`${entry.record.type}-${entry.record.name}`} className="border-t border-border py-2 text-sm first:border-t-0 first:pt-0">
                 <div className="flex items-center justify-between gap-2">
@@ -560,7 +582,7 @@ export function DossierView({
             ))}
           </LiveCard>
 
-          <LiveCard title="NNMi" system="Related alarms" empty="No open alarm is tied to this investigation.">
+          <LiveCard title="NNMi" system="nnmi/alarms" empty="No open alarm is tied to this investigation.">
             {dossier.alarms.map((alarm) => (
               <article key={alarm.id} className="border-t border-border py-2 first:border-t-0 first:pt-0">
                 <p className="text-xs">
@@ -576,7 +598,7 @@ export function DossierView({
             ))}
           </LiveCard>
 
-          <LiveCard title="Network Automation" system="Configuration changes" empty="No related configuration change in the snapshot.">
+          <LiveCard title="Network Automation" system="Configuration changes and allowlisted commands" empty="No related configuration change in the snapshot.">
             {dossier.changes.map(({ hostname, change }) => (
               <article key={change.id} className="border-t border-border py-2 first:border-t-0 first:pt-0">
                 <p className="text-sm">{change.summary}</p>
@@ -592,6 +614,7 @@ export function DossierView({
                 </pre>
               </article>
             ))}
+            <NaCommands />
           </LiveCard>
           <p className="text-xs leading-5 text-muted-foreground">
             configs_swan and show_swan_facts here are a Region 10 slice of the nightly index. NetBox, DNS, CPNR, NNMi, and Network Automation are the live connectors, filled from that same slice so the walk can be done without those systems attached. In production a DNS lookup is a resolver query, and CPNR is the zone.
@@ -644,6 +667,46 @@ function HitList({
           </ul>
         </div>
       ))}
+    </div>
+  );
+}
+
+function NaCommands() {
+  const [command, setCommand] = useState<(typeof NA_COMMANDS)[number]>(NA_COMMANDS[0]);
+  const [ran, setRan] = useState<string | null>(null);
+  return (
+    <div className="border-t border-border pt-3">
+      <p className="text-xs text-muted-foreground">
+        Allowlisted show commands. The runner rejects anything outside this list, and it does not return a second copy of the running configuration.
+      </p>
+      <label className="mt-2 block text-xs text-muted-foreground" htmlFor="na-command">
+        Command
+      </label>
+      <select
+        id="na-command"
+        value={command}
+        onChange={(event) => setCommand(event.target.value as (typeof NA_COMMANDS)[number])}
+        className="mt-1 h-8 w-full rounded-lg border border-input bg-transparent px-2 font-mono text-xs"
+      >
+        {NA_COMMANDS.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+      <div className="mt-2 flex gap-2">
+        <Button type="button" size="sm" onClick={() => setRan(command)}>
+          Run
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={() => setRan(null)}>
+          Clear
+        </Button>
+      </div>
+      {ran ? (
+        <p className="mt-2 text-xs leading-5 text-warn">
+          Backend configuration warning: the Network Automation command path is not configured. SWAN did not send “{ran}”. Set NA_COMMAND_RUNNER to an executable that accepts the device and this allowlisted command.
+        </p>
+      ) : null}
     </div>
   );
 }

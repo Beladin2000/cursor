@@ -368,20 +368,29 @@ function netboxForIps(ips: string[]): Dossier["netbox"] {
     cards.push({
       title: record.address,
       rows: [
-        { label: "Status", value: record.status },
-        { label: "Role", value: record.role },
-        { label: "Assigned to", value: record.assignedTo },
-        { label: "Description", value: record.description },
         { label: "Prefix", value: `${record.prefix} · ${record.prefixDescription}` },
         { label: "VRF", value: record.vrf },
+        { label: "Status", value: record.status },
+        { label: "Role", value: record.role },
+        ...(record.dnsName ? [{ label: "DNS name", value: record.dnsName }] : []),
+        { label: "Assigned to", value: record.assignedTo },
         { label: "Site", value: record.site },
         { label: "Tenant", value: record.tenant },
-        ...(record.dnsName ? [{ label: "DNS name", value: record.dnsName }] : []),
         ...(record.vlanId ? [{ label: "VLAN", value: String(record.vlanId) }] : []),
+        { label: "Hierarchy", value: prefixHierarchy(ip) },
+        { label: "Description", value: record.description },
       ],
     });
   }
   return cards;
+}
+
+function prefixHierarchy(ip: string): string {
+  return corpus.netboxPrefixes
+    .filter((prefix) => prefixContains(prefix.prefix, ip))
+    .sort((a, b) => prefixLength(b.prefix) - prefixLength(a.prefix))
+    .map((prefix) => prefix.prefix)
+    .join(" → ");
 }
 
 function netboxDeviceCard(device: Device): Dossier["netbox"][number] {
@@ -518,7 +527,7 @@ function attachSources(dossier: Dossier): Dossier {
         ? dnsAgrees
           ? `${dossier.lookups.length} answers`
           : "Forward and reverse disagree"
-        : "No resolver answer",
+        : "No DNS record found",
     },
     {
       id: "cpnr",
@@ -530,7 +539,7 @@ function attachSources(dossier: Dossier): Dossier {
         ? dossier.dns.some((entry) => entry.conflict)
           ? "A and PTR disagree"
           : `${dossier.dns.length} records`
-        : "No CPNR record",
+        : "No CPNR record found",
     },
     {
       id: "nnmi",
@@ -827,6 +836,17 @@ function dossierForIp(ip: string, query: string): Dossier {
     .filter((entry) => entry.prefix !== "10.40.0.0/16" && prefixContains(entry.prefix, ip))
     .sort((a, b) => prefixLength(b.prefix) - prefixLength(a.prefix))[0];
   if (prefix) dossier.netbox.push(prefixCard(prefix));
+  const endpoint = access[0];
+  const addressCard = dossier.netbox.find((card) => card.rows.some((row) => row.label === "Assigned to"));
+  if (addressCard && endpoint) {
+    const assignedAt = addressCard.rows.findIndex((row) => row.label === "Assigned to");
+    addressCard.rows.splice(
+      assignedAt + 1,
+      0,
+      { label: "Assigned device", value: hostnameFor(endpoint.deviceId) },
+      { label: "Assigned interface", value: endpoint.interface },
+    );
+  }
   dossier.dns = bundledDns.records;
   dossier.lookups = bundledDns.lookups;
   dossier.alarms = selectAlarms(scope);

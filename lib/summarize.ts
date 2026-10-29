@@ -130,7 +130,7 @@ function sourceParagraph(dossier: Dossier): string {
   } else if (forward) {
     sentences.push(`CPNR has an A record for ${forward.record.name}. A forward lookup returns ${forward.record.value}.`);
   } else if (dossier.dns.length === 0 && dossier.lookups.length === 0) {
-    sentences.push("DNS and CPNR have no record for this query in the slice.");
+    sentences.push("No DNS record found. No CPNR record found.");
   }
 
   if (dossier.policies.length > 0) {

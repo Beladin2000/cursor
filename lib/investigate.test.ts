@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { normalizeMac, prefixContains } from "./ip";
 import { investigate, sliceStats } from "./investigate";
+import { isAllowlistedCommand, NA_COMMANDS } from "./na-commands";
 import { summarize } from "./summarize";
 
 function dossier(query: string) {
@@ -47,6 +48,8 @@ describe("IP investigation", () => {
     assert.ok(result.netbox.some((card) => card.rows.some((row) => row.value === "badge-reader-4c-e12")));
     assert.ok(result.netbox.some((card) => card.rows.some((row) => row.label === "VRF" && row.value === "default")));
     assert.ok(result.netbox.some((card) => card.title === "10.40.24.0/24"));
+    assert.ok(result.netbox.some((card) => card.rows.some((row) => row.label === "Hierarchy" && row.value.includes("10.40.24.0/24 → 10.40.0.0/16"))));
+    assert.ok(result.netbox.some((card) => card.rows.some((row) => row.label === "Assigned interface" && row.value === "GigabitEthernet1/0/18")));
     assert.ok(result.lookups.some((lookup) => lookup.direction === "reverse" && lookup.answer === "badge-4c-east.regn10.swan.net" && lookup.agreesWithCpnr));
     assert.ok(result.dns.some((entry) => entry.record.system === "cpnr" && entry.record.name === "badge-4c-east.regn10.swan.net" && !entry.conflict));
     assert.ok(result.dns.some((entry) => entry.record.type === "PTR" && entry.record.value === "badge-4c-east.regn10.swan.net"));
@@ -101,6 +104,11 @@ describe("IP investigation", () => {
     assert.equal(result.arp.length, 0);
     assert.equal(result.netbox.length, 0);
     assert.ok(result.sources.every((source) => source.state === "clear" || source.id === "route"));
+    assert.equal(result.sources.find((source) => source.id === "dns")?.detail, "No DNS record found");
+    assert.equal(result.sources.find((source) => source.id === "cpnr")?.detail, "No CPNR record found");
+    assert.equal(isAllowlistedCommand("show ip arp"), true);
+    assert.equal(isAllowlistedCommand("show running-config"), false);
+    assert.equal(NA_COMMANDS.length, 13);
   });
 });
 
