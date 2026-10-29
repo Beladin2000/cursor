@@ -1,8 +1,17 @@
 # SWAN
 
-SWAN is an investigation workspace for the SWAN network. Search once for a device, IP address, MAC address, or VLAN. SWAN correlates the indexed configuration with ARP, MAC tables, routes, VLANs, and the operational records that would otherwise be checked one system at a time.
+SWAN is an investigation workspace for the SWAN network. Search once for a device, IP address, MAC address, or VLAN. SWAN walks the nightly index first, then the live systems that add something the index cannot.
 
-Version **V20.3.2** in this workspace loads a fully linked Region 10 slice (plus the Region 07 aggregate that covers it). The production pipeline counts — about 1,270 devices, 1.3 million configuration records, 16,643 ARP entries, and 307,680 MAC entries — are shown beside the slice so the scale of the index is visible. Those production systems are not attached here.
+The nightly index is built from two GitLab repositories:
+
+- `configs_swan` at `gitlab.stholdco.com/gestalt/configs_swan.git` — running configuration, device identity, interfaces, VLANs, SVIs, routes, ACLs, F5, and configuration references. The latest build is 1,270 devices, 1,300,053 configuration records, and 131 search chunks.
+- `show_swan_facts` at `gitlab.stholdco.com/swan/show_swan_facts.git` — operational output. ARP comes from `show_ip_arp_all/Show_IP_ARP_All-YYYYMMDD.csv` (16,643 records). MAC tables come from `show_mac_address_table_all/Show_MAC_ADDRESS_TABLE_All-YYYYMMDD.csv` (307,680 records).
+
+SWAN joins those into the correlation index under `AIconfig-search/public/data/` (`manifest.json`, the ARP, MAC, correlation, operational, and evidence indexes, and `chunk-0000` through `chunk-0130`). The latest build holds 10,534 IP correlations, 16,887 MAC correlations, 962 device correlations, 1,129 operational devices, 5,644 routes, 47,209 policies, 14,339 evidence IPs, 1,269 evidence devices, and 1,319 evidence VLANs.
+
+Live connectors are separate from that index: NetBox (IP, prefix, VRF, IPAM), a DNS lookup (forward and reverse), CPNR zone records, NNMi related alarms, and OpenText Network Automation configuration changes.
+
+Version **V20.3.2** in this workspace loads a fully linked Region 10 slice, plus the Region 07 aggregate that covers it. The production counts are shown on the home page. The live connectors in this workspace are filled from the slice so an investigation can be walked without those systems attached.
 
 ## Run it
 
@@ -25,10 +34,13 @@ The tests exercise the correlation engine: device, IP, MAC, VLAN, prefix, and co
 - Interfaces, VLANs, ARP, MAC entries, and routes that actually involve the query
 - Indexed configuration, with the matching lines highlighted
 - Related evidence on other devices
-- NetBox, DNS / CPNR, NNMi alarms, and Network Automation change history from the slice snapshot
+- NetBox IP, prefix, and VRF context
+- A DNS lookup, and the CPNR records behind it
+- NNMi related alarms
+- Network Automation change history: what changed, when, and on which device
 - **Summarize Findings**, which reads that evidence and writes the packet a Copilot handoff would receive
 
-Network Automation is used for change history. SWAN already has the indexed configuration, so there is no second “view live configuration” dump.
+Network Automation is the change record. The running configuration already comes from `configs_swan`.
 
 ## Paths worth opening
 

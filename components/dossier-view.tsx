@@ -217,7 +217,7 @@ export function DossierView({
 
       <div className="mt-2 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div>
-          <Section title="Devices" source="Correlation" count={dossier.devices.length} empty="No device in the slice is tied to this query.">
+          <Section title="Devices" source="Correlation index" count={dossier.devices.length} empty="No device in the slice is tied to this query.">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -249,7 +249,7 @@ export function DossierView({
 
           <Section
             title="Interfaces"
-            source="Interface and VLAN configuration"
+            source="configs_swan"
             count={dossier.interfaces.length}
             empty="No interface is tied to this query."
           >
@@ -321,7 +321,7 @@ export function DossierView({
             )}
           </Section>
 
-          <Section title="VLANs" source="VLAN definitions" count={dossier.vlans.length} empty="No VLAN is tied to this query.">
+          <Section title="VLANs" source="configs_swan" count={dossier.vlans.length} empty="No VLAN is tied to this query.">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -352,7 +352,7 @@ export function DossierView({
             </Table>
           </Section>
 
-          <Section title="ARP" source="ARP tables" count={dossier.arp.length} empty="No ARP entry references this investigation.">
+          <Section title="ARP" source="show_swan_facts · show_ip_arp_all" count={dossier.arp.length} empty="No ARP entry references this investigation.">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -361,6 +361,7 @@ export function DossierView({
                   <TableHead>MAC</TableHead>
                   <TableHead>Interface</TableHead>
                   <TableHead>Age</TableHead>
+                  <TableHead>Protocol</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -374,13 +375,14 @@ export function DossierView({
                     </TableCell>
                     <TableCell className="font-mono text-xs">{row.entry.interface}</TableCell>
                     <TableCell className="font-mono text-xs">{row.entry.age}</TableCell>
+                    <TableCell className="text-xs">{row.entry.protocol}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </Section>
 
-          <Section title="MAC address table" source="MAC tables" count={dossier.macs.length} empty="No MAC entry references this investigation.">
+          <Section title="MAC address table" source="show_swan_facts · show_mac_address_table_all" count={dossier.macs.length} empty="No MAC entry references this investigation.">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -407,7 +409,7 @@ export function DossierView({
             </Table>
           </Section>
 
-          <Section title="Routes" source="Routing tables" count={dossier.routes.length} empty="No indexed route covers this investigation. Default routes are omitted when a longer match exists.">
+          <Section title="Routes" source="Correlation index" count={dossier.routes.length} empty="No indexed route covers this investigation. Default routes are omitted when a longer match exists.">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -437,7 +439,7 @@ export function DossierView({
             </Table>
           </Section>
 
-          <Section title="Policy" source="ACLs and security rules" count={dossier.policies.length} empty="No policy references this investigation.">
+          <Section title="Policy" source="configs_swan" count={dossier.policies.length} empty="No policy references this investigation.">
             <div className="space-y-3">
               {dossier.policies.map((row) => (
                 <article key={row.policy.id} className="rounded-lg border border-border p-3">
@@ -459,12 +461,12 @@ export function DossierView({
 
           <Section
             title="Indexed configuration"
-            source="Configuration backup"
+            source="configs_swan"
             count={dossier.configDevices.length + onSubject.length}
             empty="No indexed configuration block is attached. Related lines, if any, are in the next section."
           >
             <p className="mb-3 text-xs text-muted-foreground">
-              This is the indexed backup. Network Automation is used for change history, not a second copy of the running configuration.
+              This text is the nightly configs_swan snapshot. Network Automation, in the live column, is the change: what differed, when, and on which device.
             </p>
             {dossier.configDevices.length > 1 ? (
               <div className="mb-3 flex flex-wrap gap-1.5">
@@ -500,7 +502,7 @@ export function DossierView({
 
           <Section
             title="Related evidence elsewhere"
-            source="Other devices' configuration"
+            source="Evidence index"
             count={elsewhere.length}
             empty="No other device's indexed configuration mentions this."
           >
@@ -511,22 +513,11 @@ export function DossierView({
         <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
           <div className="rounded-xl border border-border bg-card p-4">
             <h3 className="text-sm font-semibold">Sources checked</h3>
-            <ul className="mt-3 space-y-2">
-              {dossier.sources.map((source) => (
-                <li key={source.id} className="text-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <span>{source.label}</span>
-                    <span className={source.state === "hit" ? "text-signal" : "text-muted-foreground"}>
-                      {source.state === "hit" ? "Found" : "None"}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{source.detail}</p>
-                </li>
-              ))}
-            </ul>
+            <SourceGroup title="Indexed" sources={dossier.sources.filter((source) => source.tier === "indexed")} />
+            <SourceGroup title="Live" sources={dossier.sources.filter((source) => source.tier === "live")} />
           </div>
 
-          <LiveCard title="NetBox" empty="No NetBox record in the snapshot.">
+          <LiveCard title="NetBox" system="IP, prefix, VRF, IPAM" empty="No NetBox record in the snapshot.">
             {dossier.netbox.map((card) => (
               <div key={card.title} className="border-t border-border pt-3 first:border-t-0 first:pt-0">
                 <h4 className="font-mono text-sm">{card.title}</h4>
@@ -542,7 +533,20 @@ export function DossierView({
             ))}
           </LiveCard>
 
-          <LiveCard title="DNS / CPNR" empty="No forward or reverse record in the snapshot.">
+          <LiveCard title="DNS lookup" system="Forward and reverse" empty="No resolver answer in the slice.">
+            {dossier.lookups.map((lookup) => (
+              <div key={`${lookup.direction}-${lookup.query}`} className="border-t border-border py-2 text-sm first:border-t-0 first:pt-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs tracking-wide text-muted-foreground uppercase">{lookup.direction}</span>
+                  {lookup.agreesWithCpnr ? null : <span className="text-xs text-warn">Disagrees with CPNR</span>}
+                </div>
+                <p className="mt-1 break-all font-mono text-xs">{lookup.query}</p>
+                <p className="break-all text-muted-foreground">{lookup.answer}</p>
+              </div>
+            ))}
+          </LiveCard>
+
+          <LiveCard title="CPNR" system="DNS records" empty="No CPNR record in the snapshot.">
             {dossier.dns.map((entry) => (
               <div key={`${entry.record.type}-${entry.record.name}`} className="border-t border-border py-2 text-sm first:border-t-0 first:pt-0">
                 <div className="flex items-center justify-between gap-2">
@@ -556,7 +560,7 @@ export function DossierView({
             ))}
           </LiveCard>
 
-          <LiveCard title="NNMi" empty="No open alarm is tied to this investigation.">
+          <LiveCard title="NNMi" system="Related alarms" empty="No open alarm is tied to this investigation.">
             {dossier.alarms.map((alarm) => (
               <article key={alarm.id} className="border-t border-border py-2 first:border-t-0 first:pt-0">
                 <p className="text-xs">
@@ -572,7 +576,7 @@ export function DossierView({
             ))}
           </LiveCard>
 
-          <LiveCard title="Network Automation" empty="No related configuration change in the snapshot.">
+          <LiveCard title="Network Automation" system="Configuration changes" empty="No related configuration change in the snapshot.">
             {dossier.changes.map(({ hostname, change }) => (
               <article key={change.id} className="border-t border-border py-2 first:border-t-0 first:pt-0">
                 <p className="text-sm">{change.summary}</p>
@@ -590,7 +594,7 @@ export function DossierView({
             ))}
           </LiveCard>
           <p className="text-xs leading-5 text-muted-foreground">
-            NetBox, CPNR, NNMi, and Network Automation are snapshot connectors for this slice. Production systems are not attached in this workspace.
+            configs_swan and show_swan_facts here are a Region 10 slice of the nightly index. NetBox, DNS, CPNR, NNMi, and Network Automation are the live connectors, filled from that same slice so the walk can be done without those systems attached. In production a DNS lookup is a resolver query, and CPNR is the zone.
           </p>
         </aside>
       </div>
@@ -644,12 +648,45 @@ function HitList({
   );
 }
 
+function SourceGroup({
+  title,
+  sources,
+}: {
+  title: string;
+  sources: Dossier["sources"];
+}) {
+  return (
+    <div className="mt-3">
+      <h4 className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">{title}</h4>
+      <ul className="mt-2 space-y-2">
+        {sources.map((source) => (
+          <li key={source.id} className="text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span>{source.label}</span>
+              <span className={source.state === "hit" ? "text-signal" : "text-muted-foreground"}>
+                {source.state === "hit" ? "Found" : "None"}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {source.system}
+              <span className="px-1">·</span>
+              {source.detail}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function LiveCard({
   title,
+  system,
   empty,
   children,
 }: {
   title: string;
+  system: string;
   empty: string;
   children: ReactNode;
 }) {
@@ -657,7 +694,11 @@ function LiveCard({
   const present = list.some(Boolean);
   return (
     <section className="rounded-xl border border-border bg-card p-4">
-      <h3 className="text-sm font-semibold">{title}</h3>
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <span className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Live</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">{system}</p>
       <div className="mt-3">{present ? children : <p className="text-sm text-muted-foreground">{empty}</p>}</div>
     </section>
   );

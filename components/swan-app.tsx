@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { PRODUCTION_INDEX } from "@/lib/ip";
+import { INDEXED_SOURCES, LIVE_SOURCES, PRODUCTION_INDEX } from "@/lib/ip";
 import {
   describeQuery,
   investigate,
@@ -26,7 +26,7 @@ const examples = [
   {
     query: "10.40.24.46",
     kicker: "IP",
-    text: "Which device knows it, which MAC and port, and what NetBox, CPNR, and policy say.",
+    text: "Which device knows it, which MAC and port, then the NetBox prefix, DNS lookup, and CPNR record.",
   },
   {
     query: "02:4c:10:00:02:19",
@@ -352,41 +352,60 @@ function Home({
         </ul>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-border p-4">
-          <h2 className="text-sm font-semibold">Loaded for investigation</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Region 10 correlated slice, plus the Region 07 aggregate that covers it.</p>
-          <dl className="mt-4 grid grid-cols-2 gap-3">
-            <Stat label="Devices" value={stats.devices} />
-            <Stat label="Configuration lines" value={stats.configRecords} />
-            <Stat label="ARP entries" value={stats.arp} />
-            <Stat label="MAC entries" value={stats.mac} />
-            <Stat label="Correlated IPs" value={stats.correlatedIps} />
-            <Stat label="Correlated MACs" value={stats.correlatedMacs} />
-            <Stat label="Routes" value={stats.routes} />
-            <Stat label="Policies" value={stats.policies} />
-          </dl>
-        </div>
-        <div className="rounded-xl border border-border p-4">
-          <h2 className="text-sm font-semibold">{PRODUCTION_INDEX.label}</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            The production index is larger than this workspace. The same investigation is what that index is for.
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold">Indexed nightly</h2>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            These are what make a search fast. The pipeline clones them, builds the correlation index, and SWAN reads that index first.
           </p>
-          <dl className="mt-4 grid grid-cols-2 gap-3">
-            <Stat label="Devices" value={PRODUCTION_INDEX.devices} />
-            <Stat label="Configuration records" value={PRODUCTION_INDEX.configRecords} />
-            <Stat label="ARP entries" value={PRODUCTION_INDEX.arp} />
-            <Stat label="MAC entries" value={PRODUCTION_INDEX.mac} />
-            <Stat label="IP correlations" value={PRODUCTION_INDEX.ipCorrelations} />
-            <Stat label="MAC correlations" value={PRODUCTION_INDEX.macCorrelations} />
-            <Stat label="Routes" value={PRODUCTION_INDEX.routes} />
-            <Stat label="Policies" value={PRODUCTION_INDEX.policies} />
-          </dl>
         </div>
+        <div className="grid gap-3 lg:grid-cols-3">
+          {INDEXED_SOURCES.map((source) => (
+            <article key={source.id} className="rounded-xl border border-border p-4">
+              <h3 className="font-mono text-sm">{source.name}</h3>
+              <p className="mt-1 break-all font-mono text-[11px] text-signal">{source.repo}</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{source.detail}</p>
+            </article>
+          ))}
+        </div>
+        <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border p-4 sm:grid-cols-4">
+          <Stat label="configs_swan devices" value={PRODUCTION_INDEX.devices} />
+          <Stat label="Configuration records" value={PRODUCTION_INDEX.configRecords} />
+          <Stat label="Search chunks" value={PRODUCTION_INDEX.searchChunks} />
+          <Stat label="ARP records" value={PRODUCTION_INDEX.arp} />
+          <Stat label="MAC records" value={PRODUCTION_INDEX.mac} />
+          <Stat label="IP correlations" value={PRODUCTION_INDEX.ipCorrelations} />
+          <Stat label="MAC correlations" value={PRODUCTION_INDEX.macCorrelations} />
+          <Stat label="Device correlations" value={PRODUCTION_INDEX.deviceCorrelations} />
+          <Stat label="Operational devices" value={PRODUCTION_INDEX.operationalDevices} />
+          <Stat label="Routes" value={PRODUCTION_INDEX.routes} />
+          <Stat label="Policies" value={PRODUCTION_INDEX.policies} />
+          <Stat label="Evidence IPs" value={PRODUCTION_INDEX.evidenceIps} />
+          <Stat label="Evidence devices" value={PRODUCTION_INDEX.evidenceDevices} />
+          <Stat label="Evidence VLANs" value={PRODUCTION_INDEX.evidenceVlans} />
+        </dl>
+        <p className="text-xs text-muted-foreground">
+          {PRODUCTION_INDEX.label}. This workspace loads a Region 10 slice of that index: {formatCount(stats.devices)} devices, {formatCount(stats.configRecords)} configuration lines, {formatCount(stats.arp)} ARP entries, {formatCount(stats.mac)} MAC entries.
+        </p>
+      </section>
+
+      <section>
+        <h2 className="text-sm font-semibold">Live, when the investigation needs them</h2>
+        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+          These are not part of the nightly configuration index. SWAN calls them to add context the index cannot: source of truth, the current name, monitoring, and what changed.
+        </p>
+        <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+          {LIVE_SOURCES.map((source) => (
+            <li key={source.id} className="rounded-xl border border-border p-4">
+              <h3 className="text-sm font-semibold">{source.name}</h3>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{source.detail}</p>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-        SWAN started as a replacement for configuration search. This workspace correlates the indexed backup with ARP, MAC, routes, VLANs, and the NetBox, CPNR, NNMi, and Network Automation records for the slice. Summarize Findings reads that evidence. It does not guess from a device name alone.
+        Give SWAN one identifier — a device, IP, MAC, or VLAN — and it walks the indexed configuration, ARP, and MAC tables, then the correlation index, then the live systems. Summarize Findings reads that evidence. It does not start from a name alone.
       </p>
     </div>
   );

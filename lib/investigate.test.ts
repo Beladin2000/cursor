@@ -45,8 +45,14 @@ describe("IP investigation", () => {
     assert.equal(access?.entry.interface, "GigabitEthernet1/0/18");
     assert.equal(access?.entry.vlan, 240);
     assert.ok(result.netbox.some((card) => card.rows.some((row) => row.value === "badge-reader-4c-e12")));
-    assert.ok(result.dns.some((entry) => entry.record.name === "badge-4c-east.regn10.swan.net" && !entry.conflict));
+    assert.ok(result.netbox.some((card) => card.rows.some((row) => row.label === "VRF" && row.value === "default")));
+    assert.ok(result.netbox.some((card) => card.title === "10.40.24.0/24"));
+    assert.ok(result.lookups.some((lookup) => lookup.direction === "reverse" && lookup.answer === "badge-4c-east.regn10.swan.net" && lookup.agreesWithCpnr));
+    assert.ok(result.dns.some((entry) => entry.record.system === "cpnr" && entry.record.name === "badge-4c-east.regn10.swan.net" && !entry.conflict));
     assert.ok(result.dns.some((entry) => entry.record.type === "PTR" && entry.record.value === "badge-4c-east.regn10.swan.net"));
+    assert.ok(result.sources.some((source) => source.id === "config" && source.tier === "indexed" && source.system === "configs_swan"));
+    assert.ok(result.sources.some((source) => source.id === "arp" && source.system === "show_swan_facts" && source.state === "hit"));
+    assert.ok(result.sources.some((source) => source.id === "cpnr" && source.tier === "live" && source.state === "hit"));
     assert.ok(result.policies.some((row) => row.policy.name === "badge-auth"));
     assert.ok(result.routes.some((row) => row.route.prefix === "10.40.24.0/24" && row.longest));
     assert.ok(result.anomalies.some((anomaly) => anomaly.code === "native-vlan-mismatch"));
@@ -63,6 +69,7 @@ describe("IP investigation", () => {
     const result = dossier("10.40.100.50");
     assert.ok(result.anomalies.some((anomaly) => anomaly.code === "mac-on-multiple-access-ports"));
     assert.ok(result.anomalies.some((anomaly) => anomaly.code === "dns-mismatch"));
+    assert.ok(result.lookups.some((lookup) => lookup.direction === "reverse" && lookup.answer === "workstation-4c-old.regn10.swan.net" && !lookup.agreesWithCpnr));
     assert.equal(result.anomalies.some((anomaly) => anomaly.code === "native-vlan-mismatch"), false);
     const ports = result.macs.filter((row) => row.mode === "access").map((row) => row.hostname);
     assert.ok(ports.includes("C9300-REGN10-4C-ACC-2"));

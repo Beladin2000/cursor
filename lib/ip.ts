@@ -103,13 +103,71 @@ export function ouiVendor(mac: string): string {
 }
 
 export const PRODUCTION_INDEX = {
-  label: "V20.3.2 production pipeline",
+  label: "Latest indexed build",
   devices: 1270,
-  configRecords: 1_300_000,
+  configRecords: 1_300_053,
+  searchChunks: 131,
   arp: 16_643,
   mac: 307_680,
   ipCorrelations: 10_534,
   macCorrelations: 16_887,
+  deviceCorrelations: 962,
+  operationalDevices: 1_129,
   routes: 5644,
   policies: 47_209,
+  evidenceIps: 14_339,
+  evidenceDevices: 1_269,
+  evidenceVlans: 1_319,
 };
+
+export const INDEXED_SOURCES = [
+  {
+    id: "configs_swan",
+    name: "configs_swan",
+    repo: "gitlab.stholdco.com/gestalt/configs_swan.git",
+    detail:
+      "Running configuration: device identity, interfaces, VLANs, SVIs, static and dynamic routes, ACLs and security policy, F5, and configuration references.",
+  },
+  {
+    id: "show_swan_facts",
+    name: "show_swan_facts",
+    repo: "gitlab.stholdco.com/swan/show_swan_facts.git",
+    detail:
+      "Operational output. ARP is show_ip_arp_all/Show_IP_ARP_All-YYYYMMDD.csv. MAC tables are show_mac_address_table_all/Show_MAC_ADDRESS_TABLE_All-YYYYMMDD.csv.",
+  },
+  {
+    id: "correlation",
+    name: "Correlation index",
+    repo: "AIconfig-search/public/data/",
+    detail:
+      "SWAN joins the two repositories into manifest.json, device-summaries, arp-index, mac-index, correlation-index, operational-index, evidence-index, and chunk-0000 through chunk-0130.",
+  },
+] as const;
+
+export const LIVE_SOURCES = [
+  {
+    id: "netbox",
+    name: "NetBox",
+    detail: "IP, prefix, VRF, and the rest of the IPAM context. Called when an investigation needs source-of-truth context.",
+  },
+  {
+    id: "dns",
+    name: "DNS lookup",
+    detail: "Reverse an IP to a hostname, and forward a hostname to an IP.",
+  },
+  {
+    id: "cpnr",
+    name: "CPNR",
+    detail: "The DNS records held in CPNR, separate from what a resolver returns.",
+  },
+  {
+    id: "nnmi",
+    name: "NNMi",
+    detail: "Related alarms. Once the device is known, this is whether monitoring also sees a problem.",
+  },
+  {
+    id: "na",
+    name: "Network Automation",
+    detail: "Configuration changes: what changed, when, on which device, and what was different.",
+  },
+] as const;

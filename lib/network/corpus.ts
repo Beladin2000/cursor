@@ -601,6 +601,7 @@ function addArp(deviceId: string, ip: string, mac: string, vlan: number) {
     interface: `Vlan${vlan}`,
     vrf: "default",
     age: "00:03:12",
+    protocol: "Internet",
   });
 }
 
@@ -1235,7 +1236,7 @@ const configs: ConfigDoc[] = devices.map((item) => ({
         : renderIos(item),
 }));
 
-const netboxPrefixes: NetBoxPrefix[] = [
+const netboxPrefixes: NetBoxPrefix[] = ([
   { prefix: "10.40.8.0/24", description: "Building 4C management", site: "Region 10 · Building 4C", vlanId: 10, role: "management", status: "active" },
   { prefix: "10.40.20.0/24", description: "Building 4C out-of-band servers", site: "Region 10 · Building 4C", vlanId: 20, role: "servers", status: "active" },
   { prefix: "10.40.24.0/24", description: "Building 4C badge readers", site: "Region 10 · Building 4C", vlanId: 240, role: "badge", status: "active" },
@@ -1251,7 +1252,7 @@ const netboxPrefixes: NetBoxPrefix[] = [
   { prefix: "10.70.8.0/24", description: "Region 07 management", site: "Region 07 · Building 1A", vlanId: 10, role: "management", status: "active" },
   { prefix: "10.70.100.0/24", description: "Region 07 users", site: "Region 07 · Building 1A", vlanId: 100, role: "users", status: "active" },
   { prefix: "10.40.0.0/16", description: "Region 10 aggregate", site: "Region 10 · Core", role: "aggregate", status: "active" },
-];
+] satisfies Omit<NetBoxPrefix, "vrf">[]).map((prefix) => ({ ...prefix, vrf: "default" }));
 
 function zoneFor(region: string): string {
   return region === "REGN07" ? "regn07.swan.net" : "regn10.swan.net";
@@ -1262,12 +1263,13 @@ const dns: DnsRecord[] = [];
 
 function addDns(name: string, ip: string, region: string) {
   const zone = zoneFor(region);
-  dns.push({ name, type: "A", value: ip, zone });
+  dns.push({ name, type: "A", value: ip, zone, system: "cpnr" });
   dns.push({
     name: `${ip.split(".").reverse().join(".")}.in-addr.arpa`,
     type: "PTR",
     value: name,
     zone: "in-addr.arpa",
+    system: "cpnr",
   });
 }
 
@@ -1281,10 +1283,15 @@ function prefixLengthSafe(cidr: string): number {
   return Number(cidr.split("/")[1]);
 }
 
+function stampVrf(ip: Omit<NetBoxIp, "vrf">): NetBoxIp {
+  const prefix = netboxPrefixes.find((entry) => entry.prefix === ip.prefix);
+  return { ...ip, vrf: prefix?.vrf ?? "default" };
+}
+
 for (const item of devices) {
   const prefix = prefixFor(item.mgmtIp);
   const fqdn = `${item.hostname.toLowerCase()}.${zoneFor(item.region)}`;
-  netboxIps.push({
+  netboxIps.push(stampVrf({
     address: prefix ? `${item.mgmtIp}/${prefix.prefix.split("/")[1]}` : `${item.mgmtIp}/32`,
     status: "active",
     dnsName: fqdn,
@@ -1296,11 +1303,11 @@ for (const item of devices) {
     prefixDescription: prefix?.description ?? "host route",
     vlanId: prefix?.vlanId,
     site: item.siteName,
-  });
+  }));
   addDns(fqdn, item.mgmtIp, item.region);
 }
 
-const endpointIps: NetBoxIp[] = [
+const endpointIps: Omit<NetBoxIp, "vrf">[] = [
   {
     address: "10.40.24.46/24",
     status: "active",
@@ -1444,7 +1451,7 @@ const endpointIps: NetBoxIp[] = [
   },
 ];
 
-netboxIps.push(...endpointIps);
+netboxIps.push(...endpointIps.map(stampVrf));
 
 for (const ip of endpointIps) {
   if (!ip.dnsName) continue;
@@ -1454,12 +1461,14 @@ for (const ip of endpointIps) {
       type: "A",
       value: "10.40.100.50",
       zone: "regn10.swan.net",
+      system: "cpnr",
     });
     dns.push({
       name: "50.100.40.10.in-addr.arpa",
       type: "PTR",
       value: "workstation-4c-old.regn10.swan.net",
       zone: "in-addr.arpa",
+      system: "cpnr",
     });
     continue;
   }

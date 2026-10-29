@@ -66,6 +66,7 @@ export interface ArpEntry {
   interface: string;
   vrf: string;
   age: string;
+  protocol: string;
 }
 
 export interface MacEntry {
@@ -116,6 +117,7 @@ export interface NetBoxIp {
   prefix: string;
   prefixDescription: string;
   vlanId?: number;
+  vrf: string;
   site: string;
 }
 
@@ -124,6 +126,7 @@ export interface NetBoxPrefix {
   description: string;
   site: string;
   vlanId?: number;
+  vrf: string;
   role: string;
   status: "active" | "reserved";
 }
@@ -145,6 +148,14 @@ export interface DnsRecord {
   type: "A" | "PTR";
   value: string;
   zone: string;
+  system: "cpnr";
+}
+
+export interface DnsLookup {
+  direction: "forward" | "reverse";
+  query: string;
+  answer: string;
+  agreesWithCpnr: boolean;
 }
 
 export type Severity = "critical" | "major" | "minor" | "warning" | "info";
@@ -225,6 +236,8 @@ export interface ChainNode {
 export interface SourceCheck {
   id: string;
   label: string;
+  tier: "indexed" | "live";
+  system: string;
   state: "hit" | "clear";
   detail: string;
 }
@@ -261,6 +274,7 @@ export interface Dossier {
   }[];
   netbox: { title: string; rows: { label: string; value: string }[] }[];
   dns: { record: DnsRecord; conflict: boolean }[];
+  lookups: DnsLookup[];
   alarms: Alarm[];
   changes: { hostname: string; change: ChangeRecord }[];
   anomalies: Anomaly[];

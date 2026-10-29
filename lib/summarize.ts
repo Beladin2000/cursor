@@ -107,7 +107,9 @@ function sourceParagraph(dossier: Dossier): string {
     const status = address.rows.find((row) => row.label === "Status")?.value;
     const assigned = address.rows.find((row) => row.label === "Assigned to")?.value;
     const description = address.rows.find((row) => row.label === "Description")?.value;
-    sentences.push(`NetBox lists ${address.title} as ${status}, assigned to ${assigned}. ${description}`);
+    const prefix = address.rows.find((row) => row.label === "Prefix")?.value;
+    const vrf = address.rows.find((row) => row.label === "VRF")?.value;
+    sentences.push(`NetBox lists ${address.title} as ${status}, assigned to ${assigned}, in ${prefix}, VRF ${vrf}. ${description}`);
   } else if (dossier.queryType === "device" && dossier.netbox[0]) {
     const role = dossier.netbox[0].rows.find((row) => row.label === "Role")?.value;
     const site = dossier.netbox[0].rows.find((row) => row.label === "Site")?.value;
@@ -118,16 +120,17 @@ function sourceParagraph(dossier: Dossier): string {
 
   const forward = dossier.dns.find((entry) => entry.record.type === "A");
   const reverse = dossier.dns.find((entry) => entry.record.type === "PTR");
-  if (forward && reverse) {
+  const reverseLookup = dossier.lookups.find((lookup) => lookup.direction === "reverse");
+  if (reverseLookup && forward && reverse) {
     sentences.push(
       forward.record.name === reverse.record.value
-        ? `CPNR forward and reverse both return ${forward.record.name}.`
-        : `CPNR forward returns ${forward.record.name}, while the PTR returns ${reverse.record.value}.`,
+        ? `A reverse DNS lookup of ${reverseLookup.query} returns ${reverseLookup.answer}. The CPNR A and PTR agree on that name.`
+        : `A reverse DNS lookup of ${reverseLookup.query} returns ${reverseLookup.answer}. The CPNR A record is ${forward.record.name}.`,
     );
   } else if (forward) {
-    sentences.push(`CPNR has an A record for ${forward.record.name} and no PTR in the slice.`);
-  } else if (dossier.dns.length === 0) {
-    sentences.push("CPNR has no record in the slice.");
+    sentences.push(`CPNR has an A record for ${forward.record.name}. A forward lookup returns ${forward.record.value}.`);
+  } else if (dossier.dns.length === 0 && dossier.lookups.length === 0) {
+    sentences.push("DNS and CPNR have no record for this query in the slice.");
   }
 
   if (dossier.policies.length > 0) {
@@ -243,7 +246,7 @@ function packet(dossier: Dossier): string {
     ...dossier.chain.map((node, index) => `${index + 1}. ${node.kind}: ${node.label} — ${node.detail}`),
     "",
     "Sources:",
-    ...dossier.sources.map((source) => `- ${source.label}: ${source.detail}`),
+    ...dossier.sources.map((source) => `- ${source.tier === "live" ? "Live" : "Indexed"} ${source.label} (${source.system}): ${source.detail}`),
   ];
   if (dossier.anomalies.length) {
     lines.push("", "Findings:");

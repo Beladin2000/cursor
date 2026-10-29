@@ -164,6 +164,7 @@ function blank(
     configHits: [],
     netbox: [],
     dns: [],
+    lookups: [],
     alarms: [],
     changes: [],
     anomalies: [],
@@ -372,6 +373,7 @@ function netboxForIps(ips: string[]): Dossier["netbox"] {
         { label: "Assigned to", value: record.assignedTo },
         { label: "Description", value: record.description },
         { label: "Prefix", value: `${record.prefix} · ${record.prefixDescription}` },
+        { label: "VRF", value: record.vrf },
         { label: "Site", value: record.site },
         { label: "Tenant", value: record.tenant },
         ...(record.dnsName ? [{ label: "DNS name", value: record.dnsName }] : []),
@@ -398,11 +400,11 @@ function netboxDeviceCard(device: Device): Dossier["netbox"][number] {
   };
 }
 
-function dnsFor(ips: string[], names: string[] = []): Dossier["dns"] {
+function dnsBundle(ips: string[], names: string[] = []): { records: Dossier["dns"]; lookups: Dossier["lookups"] } {
   const wanted = new Set(ips);
   const reverses = new Set(ips.map((ip) => reverseDnsName(ip)));
   const nameSet = new Set(names.map((name) => name.toLowerCase()));
-  return corpus.dns
+  const records = corpus.dns
     .filter(
       (record) =>
         wanted.has(record.value) ||
@@ -418,67 +420,131 @@ function dnsFor(ips: string[], names: string[] = []): Dossier["dns"] {
         conflict: record.type === "A" && Boolean(ptr && ptr.value !== record.name),
       };
     });
+  const lookups: Dossier["lookups"] = [];
+  for (const ip of ips) {
+    const forward = records.find((entry) => entry.record.type === "A" && entry.record.value === ip);
+    const reverse = records.find((entry) => entry.record.type === "PTR" && entry.record.name === reverseDnsName(ip));
+    const agrees = !forward || !reverse || forward.record.name === reverse.record.value;
+    if (reverse) {
+      lookups.push({ direction: "reverse", query: ip, answer: reverse.record.value, agreesWithCpnr: agrees });
+    }
+    if (forward) {
+      lookups.push({ direction: "forward", query: forward.record.name, answer: forward.record.value, agreesWithCpnr: agrees });
+    }
+  }
+  return { records, lookups };
+}
+
+function applyDns(dossier: Dossier, ips: string[], names: string[] = []) {
+  const bundle = dnsBundle(ips, names);
+  dossier.dns = bundle.records;
+  dossier.lookups = bundle.lookups;
+}
+
+function prefixCard(prefix: { prefix: string; description: string; site: string; role: string; status: string; vrf: string; vlanId?: number }, vlanLabel?: string): Dossier["netbox"][number] {
+  return {
+    title: prefix.prefix,
+    rows: [
+      { label: "Description", value: prefix.description },
+      { label: "VRF", value: prefix.vrf },
+      { label: "Site", value: prefix.site },
+      { label: "Role", value: prefix.role },
+      { label: "Status", value: prefix.status },
+      ...(prefix.vlanId ? [{ label: "VLAN", value: vlanLabel ?? String(prefix.vlanId) }] : []),
+    ],
+  };
 }
 
 function attachSources(dossier: Dossier): Dossier {
   const hit = (count: number, noun: string, empty: string) =>
     count > 0 ? `${count} ${noun}` : empty;
+  const dnsAgrees = dossier.lookups.every((lookup) => lookup.agreesWithCpnr);
   dossier.sources = [
     {
       id: "config",
-      label: "Indexed configuration",
+      tier: "indexed",
+      label: "Configuration",
+      system: "configs_swan",
       state: dossier.configHits.length || dossier.configDevices.length ? "hit" : "clear",
       detail: hit(dossier.configHits.length, "referencing lines", "No configuration line references this investigation"),
     },
     {
       id: "arp",
+      tier: "indexed",
       label: "ARP",
+      system: "show_swan_facts",
       state: dossier.arp.length ? "hit" : "clear",
       detail: hit(dossier.arp.length, "entries", "No ARP entry"),
     },
     {
       id: "mac",
-      label: "MAC address tables",
+      tier: "indexed",
+      label: "MAC address table",
+      system: "show_swan_facts",
       state: dossier.macs.length ? "hit" : "clear",
       detail: hit(dossier.macs.length, "entries", "No MAC entry"),
     },
     {
       id: "route",
-      label: "Routing",
+      tier: "indexed",
+      label: "Routes",
+      system: "Correlation index",
       state: dossier.routes.length ? "hit" : "clear",
       detail: hit(dossier.routes.length, "routes", "No covering route"),
     },
     {
       id: "policy",
+      tier: "indexed",
       label: "Policy",
+      system: "configs_swan",
       state: dossier.policies.length ? "hit" : "clear",
       detail: hit(dossier.policies.length, "policies", "No policy reference"),
     },
     {
       id: "netbox",
+      tier: "live",
       label: "NetBox",
+      system: "IP / subnet context",
       state: dossier.netbox.length ? "hit" : "clear",
       detail: dossier.netbox.length ? `${dossier.netbox.length} records` : "No NetBox record",
     },
     {
       id: "dns",
-      label: "DNS / CPNR",
+      tier: "live",
+      label: "DNS lookup",
+      system: "Forward and reverse",
+      state: dossier.lookups.length ? "hit" : "clear",
+      detail: dossier.lookups.length
+        ? dnsAgrees
+          ? `${dossier.lookups.length} answers`
+          : "Forward and reverse disagree"
+        : "No resolver answer",
+    },
+    {
+      id: "cpnr",
+      tier: "live",
+      label: "CPNR",
+      system: "DNS records",
       state: dossier.dns.length ? "hit" : "clear",
       detail: dossier.dns.length
         ? dossier.dns.some((entry) => entry.conflict)
-          ? "Forward and reverse disagree"
+          ? "A and PTR disagree"
           : `${dossier.dns.length} records`
         : "No CPNR record",
     },
     {
       id: "nnmi",
+      tier: "live",
       label: "NNMi",
+      system: "Related alarms",
       state: dossier.alarms.length ? "hit" : "clear",
       detail: dossier.alarms.length ? `${dossier.alarms.length} open alarms` : "No open alarm tied to this investigation",
     },
     {
       id: "na",
+      tier: "live",
       label: "Network Automation",
+      system: "Configuration changes",
       state: dossier.changes.length ? "hit" : "clear",
       detail: dossier.changes.length ? `${dossier.changes.length} related changes` : "No related configuration change",
     },
@@ -530,7 +596,7 @@ function dossierForDevice(device: Device, query: string): Dossier {
   const foundAnomalies = selectAnomalies(scope);
   const alarms = selectAlarms(scope);
   const changes = selectChanges(scope);
-  const dns = dnsFor([device.mgmtIp], [`${device.hostname.toLowerCase()}.${device.region === "REGN07" ? "regn07.swan.net" : "regn10.swan.net"}`]);
+  const deviceDnsName = `${device.hostname.toLowerCase()}.${device.region === "REGN07" ? "regn07.swan.net" : "regn10.swan.net"}`;
   const dossier = blank({
     query,
     queryType: "device",
@@ -585,7 +651,7 @@ function dossierForDevice(device: Device, query: string): Dossier {
   dossier.configDevices = fullConfigs([device.id]);
   dossier.configHits = hits.map((hit) => ({ ...hit, hostname: hostnameFor(hit.deviceId), elsewhere: true }));
   dossier.netbox = [netboxDeviceCard(device), ...netboxForIps([device.mgmtIp])];
-  dossier.dns = dns;
+  applyDns(dossier, [device.mgmtIp], [deviceDnsName]);
   dossier.alarms = alarms;
   dossier.changes = changes;
   dossier.anomalies = foundAnomalies;
@@ -663,7 +729,7 @@ function dossierForIp(ip: string, query: string): Dossier {
     if (iface) relevantInterfaces.set(iface.id, iface);
   }
   const netbox = netboxRecord;
-  const dns = dnsFor([ip], dnsNames);
+  const bundledDns = dnsBundle([ip], dnsNames);
   const name = dnsNames[0] ?? netbox?.dnsName;
   const accessLabel = access[0]
     ? `${hostnameFor(access[0].deviceId)} ${access[0].interface}`
@@ -682,7 +748,7 @@ function dossierForIp(ip: string, query: string): Dossier {
     { label: access.length > 1 ? "Multiple access ports" : access.length === 1 ? "Learned" : configured ? "Configured" : standby ? "HSRP" : "Not learned", tone: access.length > 1 ? "attention" : access.length || configured ? "ok" : "neutral" },
   ];
   if (netbox) dossier.badges.push({ label: `NetBox ${netbox.status}`, tone: netbox.status === "active" ? "ok" : "attention" });
-  if (dns.some((entry) => entry.conflict)) dossier.badges.push({ label: "DNS mismatch", tone: "attention" });
+  if (bundledDns.records.some((entry) => entry.conflict)) dossier.badges.push({ label: "DNS mismatch", tone: "attention" });
   const chainMac = arpHits[0]?.mac ?? (configured ? deviceOf(configured.deviceId)?.mac : undefined);
   dossier.chain = [
     { id: "ip", kind: "IP", label: ip, detail: name ?? "IPv4", query: ip, tone: "neutral" },
@@ -760,18 +826,9 @@ function dossierForIp(ip: string, query: string): Dossier {
   const prefix = corpus.netboxPrefixes
     .filter((entry) => entry.prefix !== "10.40.0.0/16" && prefixContains(entry.prefix, ip))
     .sort((a, b) => prefixLength(b.prefix) - prefixLength(a.prefix))[0];
-  if (prefix) {
-    dossier.netbox.push({
-      title: prefix.prefix,
-      rows: [
-        { label: "Description", value: prefix.description },
-        { label: "Site", value: prefix.site },
-        { label: "Role", value: prefix.role },
-        ...(prefix.vlanId ? [{ label: "VLAN", value: String(prefix.vlanId) }] : []),
-      ],
-    });
-  }
-  dossier.dns = dns;
+  if (prefix) dossier.netbox.push(prefixCard(prefix));
+  dossier.dns = bundledDns.records;
+  dossier.lookups = bundledDns.lookups;
   dossier.alarms = selectAlarms(scope);
   dossier.changes = selectChanges(scope);
   dossier.anomalies = selectAnomalies(scope);
@@ -912,17 +969,9 @@ function dossierForVlan(vlanId: number, query: string): Dossier {
   dossier.routes = routes;
   dossier.policies = matchingPolicies(ips);
   dossier.configHits = hits.map((hit) => ({ ...hit, hostname: hostnameFor(hit.deviceId), elsewhere: false }));
-  dossier.netbox = prefixes.map((prefix) => ({
-    title: prefix.prefix,
-    rows: [
-      { label: "Description", value: prefix.description },
-      { label: "Site", value: prefix.site },
-      { label: "Role", value: prefix.role },
-      { label: "VLAN", value: String(vlanId) },
-    ],
-  }));
+  dossier.netbox = prefixes.map((prefix) => prefixCard(prefix, String(vlanId)));
   dossier.netbox.push(...netboxForIps(ips).slice(0, 6));
-  dossier.dns = dnsFor(ips);
+  applyDns(dossier, ips);
   dossier.alarms = selectAlarms(scope);
   dossier.changes = selectChanges(scope);
   dossier.anomalies = selectAnomalies(scope);
@@ -996,19 +1045,8 @@ function dossierForPrefix(prefix: string, query: string): Dossier {
   dossier.macs = macRows(corpus.macs.filter((entry) => arpHits.some((arp) => arp.mac === entry.mac) && modeOf(entry.deviceId, entry.interface) === "access"));
   dossier.vlans = vlanSummary(vlanIds);
   dossier.policies = matchingPolicies(ips.length ? ips : [prefix.split("/")[0]], [], 8);
-  dossier.netbox = netboxPrefix
-    ? [{
-        title: netboxPrefix.prefix,
-        rows: [
-          { label: "Description", value: netboxPrefix.description },
-          { label: "Site", value: netboxPrefix.site },
-          { label: "Role", value: netboxPrefix.role },
-          { label: "Status", value: netboxPrefix.status },
-          ...(netboxPrefix.vlanId ? [{ label: "VLAN", value: String(netboxPrefix.vlanId) }] : []),
-        ],
-      }]
-    : [];
-  dossier.dns = dnsFor(ips);
+  dossier.netbox = netboxPrefix ? [prefixCard(netboxPrefix)] : [];
+  applyDns(dossier, ips);
   dossier.alarms = selectAlarms(scope);
   dossier.changes = selectChanges(scope);
   dossier.anomalies = selectAnomalies(scope);
